@@ -25,6 +25,7 @@ public sealed class Form1 : Form
     private readonly Label total = new();
     private readonly Label valorCuota = new();
     private readonly Button calcular = new() { Text = "CALCULAR INSCRIPCIÓN" };
+    private readonly Button consultar = new() { Text = "CONSULTAR INSCRIPCIONES" };
     private readonly Color fondo = Color.FromArgb(18, 24, 32);
     private readonly Color panel = Color.FromArgb(28, 37, 49);
     private readonly Color panelClaro = Color.FromArgb(38, 50, 65);
@@ -35,6 +36,7 @@ public sealed class Form1 : Form
     private struct SOCIO
     {
         public string Nombre, Categoria, Plan, Horario, FormaPago;
+        public bool ClasesGrupales, EvaluacionInicial;
         public int Edad, Meses;
         public decimal Total, ValorCuota;
     }
@@ -91,7 +93,8 @@ public sealed class Form1 : Form
         tabla.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 115));
         tabla.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         Texto(nombre);
-        Numero(edad, 0, 99, 16);
+        Numero(edad, 0, 99, 14);
+        nombre.KeyPress += Nombre_KeyPress;
         tabla.Controls.Add(Etiqueta("NOMBRE"), 0, 0);
         tabla.Controls.Add(nombre, 1, 0);
         tabla.Controls.Add(Etiqueta("EDAD"), 0, 1);
@@ -145,12 +148,21 @@ public sealed class Form1 : Form
         var limpiar = new Button { Text = "Limpiar", Width = 100, Height = 42, BackColor = panelClaro, ForeColor = texto, FlatStyle = FlatStyle.Flat, Anchor = AnchorStyles.Top | AnchorStyles.Right };
         limpiar.FlatAppearance.BorderColor = Color.FromArgb(70, 88, 103);
         limpiar.Click += (_, _) => EstadoInicial();
+        consultar.Width = 190;
+        consultar.Height = 42;
+        consultar.BackColor = panelClaro;
+        consultar.ForeColor = texto;
+        consultar.FlatStyle = FlatStyle.Flat;
+        consultar.FlatAppearance.BorderColor = Color.FromArgb(70, 88, 103);
+        consultar.Click += (_, _) => new ConsultaInscripcionesForm().ShowDialog(this);
         p.Controls.Add(limpiar);
+        p.Controls.Add(consultar);
         p.Controls.Add(calcular);
         p.Resize += (_, _) =>
         {
             calcular.Left = p.ClientSize.Width - calcular.Width;
             limpiar.Left = calcular.Left - limpiar.Width - 10;
+            consultar.Left = limpiar.Left - consultar.Width - 10;
         };
         return p;
     }
@@ -207,7 +219,7 @@ public sealed class Form1 : Form
     }
 
     private TableLayoutPanel Tabla(int filas, int columnas) => new() { Dock = DockStyle.Fill, RowCount = filas, ColumnCount = columnas, BackColor = Color.Transparent, Padding = new Padding(0, 2, 0, 0) };
-    private Label Etiqueta(string texto) => new() { Text = texto, AutoSize = false, Dock = DockStyle.Fill, ForeColor = textoSuave, Font = new Font("Segoe UI", 8, FontStyle.Bold), TextAlign = ContentAlignment.MiddleRight, Padding = new Padding(0, 0, 10, 0), Margin = new Padding(0) };
+    private Label Etiqueta(string texto) => new() { Text = texto, AutoSize = false, Dock = DockStyle.Fill, ForeColor = textoSuave, Font = new Font("Segoe UI", 8, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(0, 0, 10, 0), Margin = new Padding(0) };
 
     private Control Destacado(string titulo, Label valor)
     {
@@ -259,6 +271,31 @@ public sealed class Form1 : Form
         }
         var socio = ObtenerSocio();
         var rebaja = Subtotal() - socio.Total;
+        try
+        {
+            RepositorioInscripciones.Guardar(new Inscripcion
+            {
+                Fecha = DateTime.Now,
+                Nombre = socio.Nombre,
+                Edad = socio.Edad,
+                Categoria = socio.Categoria,
+                Plan = socio.Plan,
+                Horario = socio.Horario,
+                Meses = socio.Meses,
+                ClasesGrupales = socio.ClasesGrupales,
+                EvaluacionInicial = socio.EvaluacionInicial,
+                FormaPago = socio.FormaPago,
+                Subtotal = Subtotal(),
+                Descuento = rebaja,
+                Total = socio.Total,
+                ValorCuota = socio.ValorCuota
+            });
+        }
+        catch (IOException error)
+        {
+            MessageBox.Show($"No se pudo guardar la inscripción.\n\n{error.Message}", "Error de guardado", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
         MessageBox.Show($"SOCIO REGISTRADO\n\nNombre: {socio.Nombre}\nCategoría: {socio.Categoria}\nPlan: {socio.Plan} · {socio.Horario}\nDuración: {socio.Meses} mes(es)\nPago: {socio.FormaPago}\n\nSubtotal: {Subtotal():C0}\nDescuento: {rebaja:C0}\nTOTAL: {socio.Total:C0}\nValor de cuota: {socio.ValorCuota:C0}", "MODO FIT · Confirmación", MessageBoxButtons.OK, MessageBoxIcon.Information);
         EstadoInicial();
     }
@@ -266,7 +303,7 @@ public sealed class Form1 : Form
     private bool Validar(out string mensaje)
     {
         if (string.IsNullOrWhiteSpace(nombre.Text)) { mensaje = "Ingresá el nombre del socio."; return false; }
-        if (edad.Value < 16) { mensaje = "La edad mínima para asociarse es de 16 años."; return false; }
+        if (edad.Value < 14) { mensaje = "La edad mínima para asociarse es de 14 años."; return false; }
         if (plan.SelectedIndex < 0 || horario.SelectedIndex < 0) { mensaje = "Elegí un plan y un horario."; return false; }
         if (meses.Value is < 1 or > 12) { mensaje = "La cantidad de meses debe estar entre 1 y 12."; return false; }
         mensaje = string.Empty;
@@ -284,6 +321,7 @@ public sealed class Form1 : Form
             Nombre = nombre.Text.Trim().ToUpperInvariant(), Edad = edadSocio,
             Categoria = edadSocio < 18 ? "Menor" : edadSocio >= 65 ? "Mayor" : "Adulto",
             Plan = plan.Text, Horario = horario.Text, Meses = (int)meses.Value,
+            ClasesGrupales = clases.Checked, EvaluacionInicial = evaluacion.Checked,
             FormaPago = pagaConTarjeta ? $"Tarjeta en {cuotas.Value:0} cuotas" : "Efectivo",
             Total = totalSocio, ValorCuota = pagaConTarjeta ? totalSocio / cuotas.Value : totalSocio
         };
@@ -300,7 +338,7 @@ public sealed class Form1 : Form
     private void EstadoInicial()
     {
         nombre.Clear();
-        edad.Value = 16;
+        edad.Value = 14;
         plan.SelectedIndex = 0;
         horario.SelectedIndex = 0;
         meses.Value = 1;
@@ -321,7 +359,8 @@ public sealed class Form1 : Form
     private void Nombre_TextChanged(object? sender, EventArgs e)
     {
         int posicion = nombre.SelectionStart;
-        string mayusculas = nombre.Text.ToUpperInvariant();
+        string soloLetras = new(nombre.Text.Where(caracter => char.IsLetter(caracter) || char.IsWhiteSpace(caracter)).ToArray());
+        string mayusculas = soloLetras.ToUpperInvariant();
         if (nombre.Text != mayusculas)
         {
             nombre.Text = mayusculas;
@@ -329,6 +368,14 @@ public sealed class Form1 : Form
         }
 
         Actualizar();
+    }
+
+    private void Nombre_KeyPress(object? sender, KeyPressEventArgs e)
+    {
+        if (!char.IsControl(e.KeyChar) && !char.IsLetter(e.KeyChar) && !char.IsWhiteSpace(e.KeyChar))
+        {
+            e.Handled = true;
+        }
     }
 
     private void ActualizarPago()
